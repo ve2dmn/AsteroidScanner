@@ -12,11 +12,13 @@ using Contracts;
 using KACMyAsteroidScanner_KACWrapper;
 //using KACWrapper;
 
+using MyAsteroidScanner.Contracts;
+using MyAsteroidScanner.Contracts.Parameters;
+
 namespace MyAsteroidScanner
 {
 	[KSPScenario(
 		ScenarioCreationOptions.AddToAllGames,
-//		GameScenes.SPACECENTER,
 		GameScenes.FLIGHT,
 		GameScenes.TRACKSTATION
 	)]
@@ -32,27 +34,59 @@ namespace MyAsteroidScanner
 		//private static bool HeadingForKSC = false; //Hard to do?
 		//private static bool RaiseSpawnLimit = false ;
 		private static int CheckAltitude = 100000;
+		private List<Vessel> DeadlyAsteroidList = new List<Vessel>();
+		private List<string> DeadlyAsteroidContracts = new List<string>();
+
+
+		// GUI stuff
+		protected Rect windowsPosition;
+
+		/// <summary>
+		/// Initial Scene load
+		/// </summary>
+		public override void  OnAwake()
+		{
+			base.OnAwake();
+			Debug.Log("Running OnAwake");
+			/*
+			//Debug functions
+			//FlightGlobals.Vessels.ForEach (Print_Vessel_info);
+			*/
+		}
 
 		/// <summary>
 		/// Stuff
 		/// </summary>
+
 		void Start ()
 		{
 			Debug.Log("Running Start () " );
-			//GameEvents.onVesselCreate.Add (CheckNewVessel);
 			GameEvents.onNewVesselCreated.Add(CheckNewVessel);
-			//GameEvents.onTimeWarpRateChanged.Add(FindKerbinKillerAsteroids);
+			GameEvents.OnFlightGlobalsReady.Add(FindKerbinKillerAsteroids);
+			GameEvents.onPlanetariumTargetChanged.Add(OnCameraVesselChange);
+			//GameEvents.onTimeWarpRateChanged.Add(AddContracts);
 
-			//@@@TODO: Load info from Config File
+
+
+
 			AutoAddKACALarm = true;
 			AutoTrack = true;
 			CheckAltitude = 100000;
-
+			DeadlyAsteroidList.Clear();
 			KACWrapper.InitKACWrapper();
 			if (KACWrapper.APIReady)
 			{
 				//All good to go
 				Debug.Log("KACWrapper Ready");
+			}
+			if (FlightGlobals.ready) {
+				FindKerbinKillerAsteroids ();
+				//AddContracts ();
+			} else {
+				Debug.Log("FlightGlobal Not Ready. Still waiting to find killer asteroids" );
+				//@@@TODO:Check for Tracking Station Scene.
+				FindKerbinKillerAsteroids ();
+				//AddContracts ();
 			}
 		}
 
@@ -63,32 +97,30 @@ namespace MyAsteroidScanner
 		public override void OnLoad(ConfigNode node)
 		{
 			base.OnLoad(node);
-
 			Debug.Log("Running OnLoad");
-			FindKerbinKillerAsteroids ();
-
 			//Debug functions
 			//FlightGlobals.Vessels.ForEach (Print_Vessel_info);
-
 		}
 
-		/// <summary>
-		/// Stuff
-		/// </summary>
-		public override void  OnAwake()
+
+
+
+		public override void OnSave(ConfigNode node)
 		{
-			base.OnAwake();
-			Debug.Log("Running OnAwake");
+			Debug.Log("Running OnSave");
 
 			//Debug functions
 			//FlightGlobals.Vessels.ForEach (Print_Vessel_info);
-			if (FlightGlobals.ready) {
-				FindKerbinKillerAsteroids ();
-			} else {
-				Debug.Log("FlightGlobal Not Ready. Could not check for Killer Asterdois" );
-			}
 
 		}
+
+		public void OnCameraVesselChange(MapObject Test)
+		{
+			AddContracts ();
+		}
+
+
+
 		/// <summary>
 		/// Stuff
 		/// </summary>
@@ -124,27 +156,136 @@ namespace MyAsteroidScanner
 		/// <summary>
 		/// Stuff
 		/// </summary>
-		private static void AsteroidIsDeadly(Vessel v)
+		private void AsteroidIsDeadly(Vessel v)
 		{
-			Debug.Log("Running AsteroidIsDeadly(), AutoTrack:"  + AutoTrack);
+			Debug.Log ("Running AsteroidIsDeadly(), AutoTrack:" + AutoTrack);
 			//@@@TODO
 
 			//Add to List Of Asteroid to check
+			if(!DeadlyAsteroidContracts.Contains(v.id.ToString()) )
+				DeadlyAsteroidList.Add (v);
+			Debug.Log ("DeadlyAsteroidList item "+ DeadlyAsteroidList.Count);
+			//AddContract (v.GetInstanceID ().ToString ());
 
 			//Track Asteroid if auto-track 
-
 			if (AutoTrack)
-				TrackAsteroid(v);
+				TrackAsteroid (v);
 
 
 			//Add KAC at SOI Time
-			if(AutoAddKACALarm)
-				MakeNewAlarm( v);
+			if (AutoAddKACALarm)
+				MakeNewAlarm (v);
+		}
 
+		private void AddContract(Vessel vID)
+		{
 			//Add Contract if possible
 
-			//
+
+			Debug.Log ("Try to find Contract for " + vID);
+
+			Debug.Log ("number of Contracts to check : " + ContractSystem.Instance.Contracts.Count ());
+			Debug.Log ("Status of Contract system: " + (ContractSystem.Instance == null));
+			Debug.Log ("ContractSystem.Instance.enabled: " + ContractSystem.Instance.enabled);
+			if (ContractSystem.Instance == null)
+				return;
+
+			Debug.Log ("number of parts:" + vID.parts.Count);
+			foreach (Part p in vID.parts)
+				Print_Parts_info (p);
+
+			AsteroidRedirectContract GeneratedContract = new AsteroidRedirectContract ();
+			//List<AsteroidRedirectContract> PossibleContracts;
+
+			for (int i = 0; i < ContractSystem.Instance.Contracts.Count; i++)
+			{
+				if (ContractSystem.Instance.Contracts [i].GetType() == GeneratedContract.GetType ())
+				{
+					AsteroidRedirectContract C =  (AsteroidRedirectContract) ContractSystem.Instance.Contracts [i];
+					if (C.getAsteroidID() == vID.id.ToString()) 
+						return;
+				}
+			}
+
+			for (int i = 0; i < ContractSystem.Instance.Contracts.Count; i++)
+			{
+				if (ContractSystem.Instance.Contracts [i].GetType() == GeneratedContract.GetType ())
+				{
+					AsteroidRedirectContract C =  (AsteroidRedirectContract) ContractSystem.Instance.Contracts [i];
+					if(C.getAvailable())
+					{
+						C.SetAsteroidID (vID);
+						return;
+					}
+				}
+			}
+
+
+
+
+			//No contract available. Try to generate a new one that can be accepted
+			/*
+			 * Debug.Log ("Generating new Contract ");
+			//Generate new Contract
+			//GeneratedContract.SetAsteroidID(vID);
+
+			if (GeneratedContract == null)
+				return;
+
+
+
+			//Add Contract if possible
+			//ContractSystem.Instance.Contracts.Add (GeneratedContract);
+			Debug.Log ("Generated Contract:" + GeneratedContract.ToString () + " with Hashcode:" +GeneratedContract.GetHashCode() );
+*/
+
 		}
+
+
+		private void AddContracts()
+		{
+			Debug.Log ("Running AddContracts ");
+			Debug.Log ("Contract system is null: " + (ContractSystem.Instance == null));
+			if (ContractSystem.Instance == null)
+				return;
+			Debug.Log ("number of Contracts : " + ContractSystem.Instance.Contracts.Count ());
+			if (ContractSystem.Instance.Contracts.Count () == 0)
+				return;
+			Debug.Log ("ContractSystem.Instance.enabled: " + ContractSystem.Instance.enabled);
+
+			if (DeadlyAsteroidList == null)
+				return;
+			Debug.Log ("DeadlyAsteroidList item "+ DeadlyAsteroidList.Count);
+			foreach( Vessel vID in DeadlyAsteroidList) 
+			{
+				AddContract (vID);
+			}
+			DeadlyAsteroidList.Clear ();
+
+			foreach (Contract C in ContractSystem.Instance.Contracts) 
+			{
+				Debug.Log ("C.ContractID : " + C.ContractID);
+				Debug.Log ("C.ContractState : " + C.ContractState);
+				Debug.Log ("C.DateAccepted : " + C.DateAccepted);
+				Debug.Log ("C.DateDeadline : " + C.DateDeadline);
+				Debug.Log ("C.DateExpire : " + C.DateExpire);
+				Debug.Log ("C.DateFinished : " + C.DateFinished);
+				Debug.Log ("C.GetType().ToString() : " + C.GetType().ToString());
+				Debug.Log ("C.Keywords : " + C.Keywords);
+				Debug.Log ("C.Notes.All : " + C.Notes);
+				Debug.Log ("C.Synopsys : " + C.Synopsys);
+				Debug.Log ("C.Title : " + C.Title);
+				Debug.Log ("C.ToString : " + C.ToString());
+				Debug.Log ("C.Description : " + C.Description);
+			}
+
+			Debug.Log ("Final number of Contracts : " + ContractSystem.Instance.Contracts.Count ());
+		}
+
+
+
+
+
 
 		/// <summary>
 		/// Stuff
@@ -241,10 +382,11 @@ namespace MyAsteroidScanner
 		/// <summary>
 		/// Stuff
 		/// </summary>
-		private static void FindKerbinKillerAsteroids (){
-
-
-			Debug.Log("Running FindKerbinKillerAsteroids \n");
+		private void FindKerbinKillerAsteroids (bool Ready = true)
+		{
+			Debug.Log("Running FindKerbinKillerAsteroids. Ready? " + Ready.ToString());
+			if (!Ready)
+				return;
 
 			foreach(Vessel v in FlightGlobals.Vessels){
 				if (v.vesselType == VesselType.SpaceObject) {
@@ -253,12 +395,10 @@ namespace MyAsteroidScanner
 						AsteroidIsDeadly(v);
 
 					}
-				
-
 				}
 			}
 			//Pop-up question/Information to the USer.?
-
+			//RenderingManager.AddToPostDrawQueue(3, new Callback(drawGUI));//start the GUI
 
 		}
 
@@ -275,6 +415,42 @@ namespace MyAsteroidScanner
 
 			}
 		}
+
+
+		//GUI Functions
+		private void WindowGUI(int windowID)
+		{
+			GUIStyle mySty = new GUIStyle(GUI.skin.button); 
+			mySty.normal.textColor = mySty.focused.textColor = Color.white;
+			mySty.hover.textColor = mySty.active.textColor = Color.yellow;
+			mySty.onNormal.textColor = mySty.onFocused.textColor = mySty.onHover.textColor = mySty.onActive.textColor = Color.green;
+			mySty.padding = new RectOffset(8, 8, 8, 8);
+
+			GUILayout.BeginVertical();
+			if (GUILayout.Button("Track Asteroids",mySty,GUILayout.ExpandWidth(true)))//GUILayout.Button is "true" when clicked
+			{	
+				AddContracts ();
+
+			}
+			GUILayout.EndVertical();
+
+			//DragWindow makes the window draggable. The Rect specifies which part of the window it can by dragged by, and is 
+			//clipped to the actual boundary of the window. You can also pass no argument at all and then the window can by
+			//dragged by any part of it. Make sure the DragWindow command is AFTER all your other GUI input stuff, or else
+			//it may "cover up" your controls and make them stop responding to the mouse.
+			GUI.DragWindow(new Rect(0, 0, 10000, 20));
+
+		}
+		private void drawGUI()
+		{
+			if (DeadlyAsteroidList.Count == 0)
+				return;
+			GUI.skin = HighLogic.Skin;
+			windowsPosition = GUILayout.Window(1, windowsPosition, WindowGUI, "Asteroid Report", GUILayout.MinWidth(100));	 
+		}
+
+
+
 
 
 		//////////////////////////////
@@ -600,6 +776,30 @@ namespace MyAsteroidScanner
 			Output += "\n GetType:" + I.GetType();
 			//Output += "\n GetSignalLife:" + I.GetSignalLife( );
 			//Output += "\n GetSignalStrength:" + I.GetSignalStrength();
+
+			Debug.Log(Output);
+		}
+
+
+		private static void Print_Parts_info(Part I)
+		{
+			String Output = "Part Info:  \n";
+			Output += "\n children.Count:" + I.children.Count;
+			Output += "\n ClassID.ToString():" + I.ClassID.ToString();
+			Output += "\n ClassName:" + I.ClassName;
+			Output += "\n craftID.ToString():" + I.craftID.ToString();
+			Output += "\n CrewCapacity.ToString():" + I.CrewCapacity.ToString();
+			Output += "\n enabled.ToString():" + I.enabled.ToString();
+			Output += "\n flightID.ToString():" + I.flightID.ToString();
+			Output += "\n initialVesselName:" + I.initialVesselName;
+			Output += "\n missionID:" + I.missionID;
+			Output += "\n name:" + I.name;
+			Output += "\n partName:" + I.partName;
+			Output += "\n started:" + I.started;
+			Output += "\n State.ToString ():" + I.State.ToString ();
+			Output += "\n ToString ():" + I.ToString ();
+			Output += "\n vesselType.ToString ():" + I.vesselType.ToString ();
+
 
 			Debug.Log(Output);
 		}
