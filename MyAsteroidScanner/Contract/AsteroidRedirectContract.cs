@@ -105,12 +105,13 @@ namespace MyAsteroidScanner.Contracts
 		}
 		protected override string GetTitle ()
 		{
-			return "Divert Asteroid " + AsteroidVesselID;
+			return "Divert Asteroid " + AsteroidName;
 		}
 		protected override string GetDescription ()
 		{
-			//those 3 strings appear to do nothing
+			
 			return Description1 + Description2 + AsteroidName;
+			//those 3 strings appear to do nothing
 				//TextGen.GenerateBackStories (Agent.Name, Agent.GetMindsetString (), "Divert", "Asteroid", "Save Kerbin", new System.Random ().Next());
 		}
 		protected override string GetSynopsys ()
