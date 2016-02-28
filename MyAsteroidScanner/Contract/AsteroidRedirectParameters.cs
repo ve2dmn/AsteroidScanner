@@ -44,19 +44,18 @@ namespace MyAsteroidScanner.Contracts.Parameters
 		{
 			
 			//Add function to check if Achivement is there.
-			//GameEvents.onVesselOrbitClosed.Add(...);
-			//GameEvents.onVesselOrbitEscaped.Add(...);
-			//GameEvents.onPartAttach.Add(..);
 			GameEvents.onVesselOrbitClosed.Add(OnOrbitChange);
 			GameEvents.onVesselOrbitEscaped.Add (OnOrbitChange);
-			GameEvents.onVesselChange.Add (OnOrbitChange);
+			GameEvents.onPlanetariumTargetChanged.Add(OnCameraVesselChange);
+
 
 		}
 		protected override void OnUnregister ()
 		{
 			GameEvents.onVesselOrbitClosed.Remove(OnOrbitChange);
 			GameEvents.onVesselOrbitEscaped.Remove(OnOrbitChange);
-			GameEvents.onVesselChange.Remove (OnOrbitChange);
+			GameEvents.onPlanetariumTargetChanged.Remove(OnCameraVesselChange);
+
 		}
 
 		protected override void OnLoad (ConfigNode node)
@@ -68,12 +67,43 @@ namespace MyAsteroidScanner.Contracts.Parameters
 			node.AddValue ("AsteroidVesselID", AsteroidVesselID);
 		}
 
+		public void OnCameraVesselChange(MapObject Test)
+		{
+			OnOrbitChange (FlightGlobals.ActiveVessel);
+		}
+
+		private void OnVesselChangedSituation(GameEvents.HostedFromToAction< Vessel, Vessel.Situations> ActiveVessel)
+		{
+			if(ActiveVessel.to != Vessel.Situations.SPLASHED)
+				OnOrbitChange (ActiveVessel.host);
+		}
+
 		private void OnOrbitChange(Vessel ActiveVessel)
 		{
+			
+			//if(ActiveVessel.id != 
+			Debug.Log("Running  OnOrbitChange() / check for periapsis for  :" +  ActiveVessel.GetName() );
+			if (!ActiveVessel.PatchedConicsAttached)
+			{
+				Debug.Log ("No PatchedConicSolver. Creating a New One. ");
+				try
+				{
+					//v.patchedConicSolver = new PatchedConicSolver ();
+					ActiveVessel.AttachPatchedConicsSolver ();
+					ActiveVessel.patchedConicSolver.IncreasePatchLimit ();
+					ActiveVessel.patchedConicSolver.Update ();
+				} catch (Exception ex)
+				{
+					Debug.Log ("Could not attach patchedConicSolver. Exception:" + ex);
+					//DontdetachConics = true;
+					//v.DetachPatchedConicsSolver ();
+				}
+			}
 			Orbit o = ActiveVessel.orbit;
 			while(o.activePatch)
 			{
 			//@@@TODO: Make Altitude variable. 70k for now
+				Debug.Log("Check Orbit" );
 				if (o.referenceBody.name == FlightGlobals.Bodies [1].bodyName)  // Around Kerbin
 				{
 					if(o.PeA >= 70000 )
@@ -88,9 +118,6 @@ namespace MyAsteroidScanner.Contracts.Parameters
 					}
 
 				}
-
-
-
 				o = o.nextPatch;
 		
 			}
@@ -156,6 +183,7 @@ namespace MyAsteroidScanner.Contracts.Parameters
 			//Add function to check if Achivement is there.
 			GameEvents.onPartCouple.Add (OnDock);
 			GameEvents.onVesselChange.Add(OnVesselLoad);
+			GameEvents.onVesselLoaded.Add(OnVesselLoad);
 
 		}
 		protected override void OnUnregister ()
@@ -179,7 +207,8 @@ namespace MyAsteroidScanner.Contracts.Parameters
 
 		private void OnVesselLoad(Vessel v)
 		{
-			if (AsteroidPartID != null)
+			Debug.Log("Running OnVesselLoad() / check for Potato Parts " );
+			if (AsteroidPartID != null && AsteroidPartID != "")
 			{
 				foreach (Part p in  v.parts.FindAll(s => s.partName == "PotatoRoid"))
 				{
@@ -193,7 +222,12 @@ namespace MyAsteroidScanner.Contracts.Parameters
 			{
 				if(v.id.ToString() == AsteroidVesselID )
 				{
-					
+					foreach (Part p in  v.parts.FindAll(s => s.partName == "PotatoRoid"))
+					{
+						if (p.name.Contains (AsteroidName))
+							AsteroidPartID = p.flightID.ToString ();
+					}
+								
 					base.SetComplete ();
 					return;
 				}
@@ -205,7 +239,7 @@ namespace MyAsteroidScanner.Contracts.Parameters
 
 		private void OnDock(GameEvents.FromToAction<Part, Part> action)
 		{
-			if (AsteroidPartID != null)
+			if (AsteroidPartID != null && AsteroidPartID != "")
 			{
 				if (action.from.flightID.ToString () == AsteroidPartID || action.to.flightID.ToString () == AsteroidPartID)
 				{
